@@ -1,0 +1,259 @@
+-- CRIMSON ASSIST FULL SYSTEM - UI + AIMBOT + ESP + MOVEMENT
+-- Funktioniert mit Xeno Executor
+
+-- EINSTELLUNGEN
+local Settings = {
+    Aimbot = {
+        Enabled     = false,
+        Mode        = "Smooth", -- "Smooth", "Aggressive", "Blatant", "Silent"
+        TargetPart  = "Head",
+        Smoothness  = 0.1,
+        FOV         = 150,
+    },
+    ESP = {
+        Enabled     = false,
+        ShowName    = true,
+        ShowDistance= true,
+        BoneESP     = true,
+        LookVector  = true,
+        MaxDistance = 1000,
+    },
+    Movement = {
+        SpeedHack   = false,
+        Speed       = 50,
+    }
+}
+
+-- UI SETUP
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window  = Library.CreateLib("CRIMSON ASSIST", "DarkTheme")
+local TabA    = Window:NewTab("AIMBOT")
+local TabE    = Window:NewTab("ESP")
+local TabM    = Window:NewTab("MOVEMENT")
+local SecA    = TabA:NewSection("Aimbot")
+local SecE    = TabE:NewSection("ESP")
+local SecM    = TabM:NewSection("Movement")
+
+-- Aimbot UI
+SecA:NewToggle("Enable Aimbot (F)", "", function(v) Settings.Aimbot.Enabled = v end)
+SecA:NewDropdown("Mode", "", {"Smooth","Aggressive","Blatant","Silent"}, function(v) Settings.Aimbot.Mode = v end)
+SecA:NewDropdown("Target Part", "", {"Head","Torso","LeftArm","RightArm","LeftLeg","RightLeg"}, function(v) Settings.Aimbot.TargetPart = v end)
+SecA:NewSlider("Smoothness", "", 100, 1, function(v) Settings.Aimbot.Smoothness = v/100 end)
+SecA:NewSlider("FOV", "", 300, 50, function(v) Settings.Aimbot.FOV = v fov.Radius = v end)
+
+-- ESP UI
+SecE:NewToggle("Enable ESP", "", function(v) Settings.ESP.Enabled = v end)
+SecE:NewToggle("Show Name", "", function(v) Settings.ESP.ShowName = v end)
+SecE:NewToggle("Show Distance", "", function(v) Settings.ESP.ShowDistance = v end)
+SecE:NewToggle("Bone ESP", "", function(v) Settings.ESP.BoneESP = v end)
+SecE:NewToggle("Look Vector", "", function(v) Settings.ESP.LookVector = v end)
+SecE:NewSlider("Max Distance", "", 5000, 100, function(v) Settings.ESP.MaxDistance = v end)
+
+-- Movement UI
+SecM:NewToggle("Speed Hack", "", function(v) Settings.Movement.SpeedHack = v end)
+SecM:NewSlider("Speed", "", 200, 16, function(v) Settings.Movement.Speed = v end)
+
+-- SERVICES
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local UIS         = game:GetService("UserInputService")
+local Camera      = workspace.CurrentCamera
+local LP          = Players.LocalPlayer
+
+-- FOV CIRCLE
+local fov = Drawing.new("Circle")
+fov.Thickness     = 1
+fov.Filled        = false
+fov.Transparency  = 1
+fov.Color         = Color3.fromRGB(255,0,0)
+fov.Radius        = Settings.Aimbot.FOV
+fov.Visible       = true
+
+RunService.RenderStepped:Connect(function()
+    fov.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+end)
+
+-- Aimbot Input
+local HoldingF = false
+UIS.InputBegan:Connect(function(i) if i.KeyCode==Enum.KeyCode.F then HoldingF=true end end)
+UIS.InputEnded:Connect(function(i) if i.KeyCode==Enum.KeyCode.F then HoldingF=false end end)
+
+-- find closest target within FOV
+local function getClosestPlayer()
+    local closest, shortest = nil, math.huge
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr~=LP and plr.Character and plr.Character:FindFirstChild(Settings.Aimbot.TargetPart) then
+            local part = plr.Character[Settings.Aimbot.TargetPart]
+            local pos,on = Camera:WorldToViewportPoint(part.Position)
+            if on then
+                local d = (Vector2.new(pos.X,pos.Y) - Vector2.new(Camera.ViewportSize.X/2,Camera.ViewportSize.Y/2)).Magnitude
+                if d<shortest and d<=Settings.Aimbot.FOV then
+                    shortest,closest = d,part
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Aimbot Logic
+RunService.RenderStepped:Connect(function()
+    if Settings.Aimbot.Enabled and HoldingF then
+        local target = getClosestPlayer()
+        if target then
+            local camPos = Camera.CFrame.Position
+            local tgtPos = target.Position
+            if Settings.Aimbot.Mode=="Smooth" then
+                local dir = (tgtPos-camPos).Unit
+                local newCF = CFrame.new(camPos, camPos + dir:Lerp(Camera.CFrame.LookVector, Settings.Aimbot.Smoothness))
+                Camera.CFrame = newCF
+            elseif Settings.Aimbot.Mode=="Aggressive" or Settings.Aimbot.Mode=="Blatant" then
+                Camera.CFrame = CFrame.lookAt(camPos, tgtPos)
+            elseif Settings.Aimbot.Mode=="Silent" then
+                local screenPos,_ = Camera:WorldToViewportPoint(tgtPos)
+                local cx,cy = Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2
+                local dx,dy = screenPos.X-cx, screenPos.Y-cy
+                mousemoverel(dx,dy)
+            end
+        end
+    end
+end)
+
+-- Speed Hack
+RunService.RenderStepped:Connect(function()
+    if Settings.Movement.SpeedHack and LP.Character and LP.Character:FindFirstChild("Humanoid") then
+        LP.Character.Humanoid.WalkSpeed = Settings.Movement.Speed
+    end
+end)
+
+-- ESP SYSTEM
+local espCache = {}
+local bonePairs = {
+    {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
+    {"UpperTorso","LeftUpperArm"},{"UpperTorso","RightUpperArm"},
+    {"LeftUpperArm","LeftLowerArm"},{"RightUpperArm","RightLowerArm"},
+    {"LeftLowerArm","LeftHand"},{"RightLowerArm","RightHand"},
+    {"LowerTorso","LeftUpperLeg"},{"LowerTorso","RightUpperLeg"},
+    {"LeftUpperLeg","LeftLowerLeg"},{"RightUpperLeg","RightLowerLeg"},
+    {"LeftLowerLeg","LeftFoot"},{"RightLowerLeg","RightFoot"},
+}
+
+local function clearESP()
+    for _,objs in pairs(espCache) do
+        for _,o in pairs(objs) do
+            if typeof(o)=="Drawing" then o:Remove() end
+        end
+    end
+    espCache = {}
+end
+
+local function createESP(plr)
+    if espCache[plr] then return end
+    local tbl = {
+        Name = Drawing.new("Text"),
+        Distance = Drawing.new("Text"),
+        Look = Drawing.new("Line"),
+        Bones = {}
+    }
+    -- Name
+    tbl.Name.Size, tbl.Name.Center, tbl.Name.Outline = 13,true,true
+    tbl.Name.Color = Color3.new(1,1,1)
+    -- Distance
+    tbl.Distance.Size, tbl.Distance.Center, tbl.Distance.Outline = 12,true,true
+    tbl.Distance.Color = Color3.new(1,1,1)
+    -- LookVector
+    tbl.Look.Thickness = 1
+    tbl.Look.Color = Color3.new(1,0,0)
+    -- Bones
+    for i=1,#bonePairs do
+        local line = Drawing.new("Line")
+        line.Thickness = 1
+        line.Color = Color3.new(1,0,0)
+        table.insert(tbl.Bones, line)
+    end
+    espCache[plr] = tbl
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Settings.ESP.Enabled then
+        clearESP()
+        return
+    end
+
+    for _,plr in pairs(Players:GetPlayers()) do
+        local char = plr.Character
+        if plr~=LP and char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health>0 then
+            local root = char.HumanoidRootPart
+            local head = char:FindFirstChild("Head")
+            local pos,on = Camera:WorldToViewportPoint(root.Position)
+
+            if on and (Camera.CFrame.Position-root.Position).Magnitude<=Settings.ESP.MaxDistance then
+                if not espCache[plr] then createESP(plr) end
+                local e = espCache[plr]
+
+                -- Name
+                if Settings.ESP.ShowName then
+                    e.Name.Text = plr.Name
+                    e.Name.Position = Vector2.new(pos.X,pos.Y-30)
+                    e.Name.Visible = true
+                else e.Name.Visible = false end
+
+                -- Distance
+                if Settings.ESP.ShowDistance then
+                    local d = math.floor((root.Position-Camera.CFrame.Position).Magnitude)
+                    e.Distance.Text = d.."m"
+                    e.Distance.Position = Vector2.new(pos.X,pos.Y-18)
+                    e.Distance.Visible = true
+                else e.Distance.Visible = false end
+
+                -- LookVector
+                if Settings.ESP.LookVector and head then
+                    local fwd = root.CFrame.LookVector*10
+                    local tgt,_ = Camera:WorldToViewportPoint(root.Position+fwd)
+                    e.Look.From = Vector2.new(pos.X,pos.Y)
+                    e.Look.To   = Vector2.new(tgt.X,tgt.Y)
+                    e.Look.Visible = true
+                else e.Look.Visible = false end
+
+                -- Bone ESP
+                if Settings.ESP.BoneESP then
+                    for i,p in ipairs(bonePairs) do
+                        local p1,p2 = char:FindFirstChild(p[1]), char:FindFirstChild(p[2])
+                        local line = e.Bones[i]
+                        if p1 and p2 then
+                            local s1,o1 = Camera:WorldToViewportPoint(p1.Position)
+                            local s2,o2 = Camera:WorldToViewportPoint(p2.Position)
+                            if o1 and o2 then
+                                line.From = Vector2.new(s1.X,s1.Y)
+                                line.To   = Vector2.new(s2.X,s2.Y)
+                                line.Visible = true
+                            else line.Visible = false end
+                        else line.Visible = false end
+                    end
+                else
+                    for _,l in pairs(e.Bones) do l.Visible = false end
+                end
+
+            else
+                if espCache[plr] then
+                    for _,o in pairs(espCache[plr]) do
+                        if typeof(o)=="Drawing" then o.Visible=false end
+                    end
+                end
+            end
+        elseif espCache[plr] then
+            for _,o in pairs(espCache[plr]) do
+                if typeof(o)=="Drawing" then o.Visible=false end
+            end
+        end
+    end
+end)
+
+-- Cleanup on respawn / leave
+Players.PlayerRemoving:Connect(function(plr)
+    if espCache[plr] then
+        for _,o in pairs(espCache[plr]) do if typeof(o)=="Drawing" then o:Remove() end end
+        espCache[plr] = nil
+    end
+end)
+LP.CharacterAdded:Connect(clearESP)
